@@ -1,0 +1,275 @@
+#import QT modules
+from PyQt4.QtCore import *
+from PyQt4.QtGui import *
+from GUI import *
+from Scientific.IO import *
+
+#import fortran modules
+from contact import *
+from inputUtil import *
+
+#import util modules
+import sys
+import shutil
+import os
+import time
+
+#import plotting modules
+from mpl_toolkits.mplot3d import axes3d
+import numpy as np
+import matplotlib
+matplotlib.use('Qt4Agg')
+import matplotlib.pyplot as plt
+
+#CUSTOM TAB BAR CLASS
+class NTabBar(QTabBar):
+
+    def __init__(self, *args):
+        apply(QTabBar.__init__, (self,) + args)
+
+
+#CONTACT MAPPER CLASS
+class ContactMapper(QtGui.QMainWindow, Ui_MainWindow):
+
+    filenameA = ""
+    filenameB = ""
+    previousFilename = "."
+    atomNumberA = []
+    atomNumberB = []
+    sepDistance = []
+    
+    def __init__(self):
+        QtGui.QMainWindow.__init__(self)
+        Ui_MainWindow.__init__(self)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+        
+        #setup signals and slots
+        self.ui.single_mapping_button.clicked.connect(self.selectView0)
+        self.ui.batch_mapping_button.clicked.connect(self.selectView1)
+        self.ui.analysis_button.clicked.connect(self.selectView2)
+        self.ui.actionSingle_Mapping.triggered.connect(self.selectView0)
+        self.ui.actionBatch_Mapping.triggered.connect(self.selectView1)
+        self.ui.actionAnalysis.triggered.connect(self.selectView2)
+        self.ui.protein_A_button.clicked.connect(self.browseClickA)
+        self.ui.protein_B_button.clicked.connect(self.browseClickB)
+        self.ui.map_button.clicked.connect(self.mapClick)
+        self.ui.graph_button.clicked.connect(self.graph)
+        self.connect(self.ui.new_analysis, SIGNAL("currentChanged(int)"),self.newAnalysis)
+        #self.setEnabled(False)
+        #self.generateArrays()
+
+        
+    #SIGNAL AND SLOT HANDLING
+    def newAnalysis(self):
+        print "te"
+        filename=QFileDialog.getOpenFileName(self, "Open Protein Contact File", self.previousFilename, "*.pcf")
+        self.previousFilename = filename
+        page = QWidget()
+        self.tabWidget.insertTab(self.tabWidget.count()-1,page,"Analysis...")
+        generateAnalysisWidget(self.tabWidget.count()-1,page)
+    
+    def selectView0(self):
+        self.selectView(0)
+    def selectView1(self):
+        self.selectView(1)
+    def selectView2(self):
+        self.selectView(2)
+    def selectView(self,view):
+        if view==0:
+            self.ui.batch_mapping_button.setChecked(False)
+            self.ui.analysis_button.setChecked(False)
+            self.ui.single_mapping_button.setChecked(True)
+            self.ui.actionSingle_Mapping.setChecked(True)
+            self.ui.actionBatch_Mapping.setChecked(False)
+            self.ui.actionAnalysis.setChecked(False)
+        if view==1:
+            self.ui.single_mapping_button.setChecked(False)
+            self.ui.analysis_button.setChecked(False)
+            self.ui.batch_mapping_button.setChecked(True)
+            self.ui.actionSingle_Mapping.setChecked(False)
+            self.ui.actionBatch_Mapping.setChecked(True)
+            self.ui.actionAnalysis.setChecked(False)
+        if view==2:
+            self.ui.batch_mapping_button.setChecked(False)
+            self.ui.single_mapping_button.setChecked(False)
+            self.ui.analysis_button.setChecked(True)
+            self.ui.actionSingle_Mapping.setChecked(False)
+            self.ui.actionBatch_Mapping.setChecked(False)
+            self.ui.actionAnalysis.setChecked(True)
+        self.ui.view_frame.setCurrentIndex(view)
+        
+    def browseClickA(self):
+        self.filenameA=QFileDialog.getOpenFileName(self, "Open Protein A", self.previousFilename, "*.pdb")
+        self.ui.protein_A.setText(self.filenameA)
+        self.previousFilename = self.filenameA
+
+    def browseClickB(self):
+        self.filenameB=QFileDialog.getOpenFileName(self, "Open Protein B", self.previousFilename, "*.pdb")
+        self.ui.protein_B.setText(self.filenameB)
+        self.previousFilename = self.filenameB
+
+    def mapClick(self):
+        if self.filenameA != "" and self.filenameB !="":
+            shutil.copyfile(self.filenameA,"."+os.sep+"prota.pdb")
+            shutil.copyfile(self.filenameB,"."+os.sep+"protb.pdb")
+            self.executeFortran()
+#debug else
+        else:
+            self.executeFortran()
+            
+            
+    def graph(self):
+        self.graphSepDistance()
+        
+    #GRAPHING METHODS
+    def graphSepDistance(self):
+        A = np.array(self.atomNumberA)
+        B = np.array(self.atomNumberB)
+        S = np.array(self.sepDistance)
+        A = np.unique(A)
+        B = np.unique(B)
+        Z = np.zeros((A.size,B.size))
+        i = 0
+        for x in range(0,A.size):
+            for y in range(0,B.size):
+                Z[x,y] = S[i]
+                i=i+1
+        fig = plt.figure()
+        #ax = fig.add_subplot(111,projection='3d')
+        #ax = fig.gca(projection='3d')
+        ax = fig.add_subplot(111)
+        #ax.plot(A,B,Z)
+        ax.contourf(B,A,Z,rstride=10,cstride=10)
+        #ax.set_title("Title")
+        ax.grid(True)
+        plt.show()
+
+    #UTILITY METHODS
+    def executeFortran(self):
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        self.output("Generating temporary protein files...")
+        start_time = time.time()
+        #TODO - error handling for fortran file
+        inpututil()
+        end_time = time.time()
+        elapsed = end_time - start_time
+        self.output("Done. "+ str(elapsed)+ "s elapsed")
+        self.output("Calculating protein mapping...")
+        start_time = time.time()
+        #TODO - error handling for fortran file
+        contact()
+        end_time = time.time()
+        elapsed = end_time - start_time
+        self.output("Done. "+ str(elapsed)+ "s elapsed")
+        self.generateArrays()
+        end_time = time.time()
+        QApplication.restoreOverrideCursor();
+        self.setEnabled(True)
+        
+    def generateArrays(self):
+        self.output("Filling internal arrays...")
+        start_time = time.time()
+        if os.path.isfile("fort.8"):
+            with open("fort.8","r") as fort8:
+                for line in fort8:
+                    temp = line.split(',')[0]
+                    self.atomNumberA.append(int(temp))
+                    temp = line.split(',')[3]
+                    self.atomNumberB.append(int(temp))
+                    temp = line.split(',')[6]
+                    self.sepDistance.append(float(temp))
+        end_time = time.time()
+        elapsed = end_time - start_time
+        self.output("Done. " +str(elapsed)+ "s elapsed")
+        
+    def setEnabled(self, enable):
+        print "enabled: "
+        
+    def generateAnalysisWidget(self, page, widget_id):
+        analysisWidget = QtGui.QWidget(page)
+        analysisWidget.setGeometry(QtCore.QRect(20, 20, 700, 501))
+        analysisWidget.setMinimumSize(QtCore.QSize(700, 0))
+        analysisWidget.setObjectName(_fromUtf8("analysisWidget_"+str(widget_id)))
+        graphing_box = QtGui.QGroupBox(analysisWidget)
+        graphing_box.setGeometry(QtCore.QRect(0, 210, 701, 121))
+        graphing_box.setObjectName(_fromUtf8("graphing_box"))
+        graph_button = QtGui.QPushButton(graphing_box)
+        graph_button.setGeometry(QtCore.QRect(470, 60, 75, 23))
+        graph_button.setObjectName(_fromUtf8("graph_button"))
+        graph_type_label = QtGui.QLabel(graphing_box)
+        graph_type_label.setGeometry(QtCore.QRect(110, 40, 71, 16))
+        graph_type_label.setObjectName(_fromUtf8("graph_type_label"))
+        graph_type = QtGui.QComboBox(graphing_box)
+        graph_type.setGeometry(QtCore.QRect(110, 60, 121, 22))
+        graph_type.setObjectName(_fromUtf8("graph_type"))
+        graph_type.addItem(_fromUtf8(""))
+        graph_type.addItem(_fromUtf8(""))
+        graph_data = QtGui.QComboBox(graphing_box)
+        graph_data.setGeometry(QtCore.QRect(240, 60, 221, 22))
+        graph_data.setObjectName(_fromUtf8("graph_data"))
+        graph_data.addItem(_fromUtf8(""))
+        graph_data.addItem(_fromUtf8(""))
+        graph_data.addItem(_fromUtf8(""))
+        graph_data_label = QtGui.QLabel(graphing_box)
+        graph_data_label.setGeometry(QtCore.QRect(240, 40, 71, 16))
+        graph_data_label.setObjectName(_fromUtf8("graph_data_label"))
+        export_box = QtGui.QGroupBox(analysisWidget)
+        export_box.setGeometry(QtCore.QRect(0, 340, 701, 141))
+        export_box.setObjectName(_fromUtf8("export_box"))
+        xls_export_button = QtGui.QPushButton(export_box)
+        xls_export_button.setGeometry(QtCore.QRect(110, 70, 131, 31))
+        xls_export_button.setObjectName(_fromUtf8("xls_export_button"))
+        graphing_box.setTitle(QtGui.QApplication.translate("MainWindow", "Graphing", None, QtGui.QApplication.UnicodeUTF8))
+        graph_button.setText(QtGui.QApplication.translate("MainWindow", "Graph", None, QtGui.QApplication.UnicodeUTF8))
+        graph_type_label.setText(QtGui.QApplication.translate("MainWindow", "Graph Type", None, QtGui.QApplication.UnicodeUTF8))
+        graph_type.setItemText(0, QtGui.QApplication.translate("MainWindow", "Heat Map", None, QtGui.QApplication.UnicodeUTF8))
+        graph_type.setItemText(1, QtGui.QApplication.translate("MainWindow", "3D Plot", None, QtGui.QApplication.UnicodeUTF8))
+        graph_data.setItemText(0, QtGui.QApplication.translate("MainWindow", "Ressidue-Ressidue Separation", None, QtGui.QApplication.UnicodeUTF8))
+        graph_data.setItemText(1, QtGui.QApplication.translate("MainWindow", "Lennard-Jones", None, QtGui.QApplication.UnicodeUTF8))
+        graph_data.setItemText(2, QtGui.QApplication.translate("MainWindow", "Coulombic Potential", None, QtGui.QApplication.UnicodeUTF8))
+        graph_data_label.setText(QtGui.QApplication.translate("MainWindow", "Graph Data", None, QtGui.QApplication.UnicodeUTF8))
+        export_box.setTitle(QtGui.QApplication.translate("MainWindow", "Export", None, QtGui.QApplication.UnicodeUTF8))
+        xls_export_button.setText(QtGui.QApplication.translate("MainWindow", "Export to .xls (Excel)", None, QtGui.QApplication.UnicodeUTF8))
+        
+    def output(self,output):
+        if self.ui.console.toPlainText() == "":
+            self.ui.console.setText(time.strftime("[%a, %d %b %Y %H:%M:%S] - ")+ output)
+        else:
+            self.ui.console.setText(self.ui.console.toPlainText()+"\n"+time.strftime("%a, %d %b %Y %H:%M:%S - ")+output)
+        
+#END CONTACT MAPPER CLASS
+        
+def init():
+    app = QtGui.QApplication(sys.argv)
+    window = ContactMapper()
+    window.show()
+    app.exec_()
+    cleanup()
+
+def cleanup():
+    if os.path.isfile("."+os.sep+"prota.pdb"):
+        os.remove("."+os.sep+"prota.pdb")
+    if os.path.isfile("."+os.sep+"protb.pdb"):
+        os.remove("."+os.sep+"protb.pdb")
+    if os.path.isfile("."+os.sep+"proteina"):
+        os.remove("."+os.sep+"proteina")
+    if os.path.isfile("."+os.sep+"proteinb"):
+        os.remove("."+os.sep+"proteinb")
+    if os.path.isfile("."+os.sep+"lja"):
+        os.remove("."+os.sep+"lja")
+    if os.path.isfile("."+os.sep+"ljb"):
+        os.remove("."+os.sep+"ljb")
+    if os.path.isfile("."+os.sep+"atnma"):
+        os.remove("."+os.sep+"atnma")
+    if os.path.isfile("."+os.sep+"atnmb"):
+        os.remove("."+os.sep+"atnmb")
+    if os.path.isfile("."+os.sep+"fort.8"):
+        os.remove("."+os.sep+"fort.8")
+    if os.path.isfile("."+os.sep+"fort.18"):
+        os.remove("."+os.sep+"fort.18")
+    if os.path.isfile("."+os.sep+"fort.19"):
+        os.remove("."+os.sep+"fort.19")
+
+ 
+init()
