@@ -57,7 +57,13 @@ def __main__():
         parser.print_usage()
         sys.exit(1)
 
+    # resource files need to be in working directory
+    resource_path = os.path.abspath(os.path.dirname(sys.argv[0]))
+    resource_files = ['ctresc03.pdb', 'ctresc03n.pdb', 'residc03n.pdb', 'residc03.pdb', 'ntresc03n.pdb', 'ntresc03.pdb', 'ljresidn', 'ljresid']
+    for f in resource_files:
+        shutil.copyfile(resource_path+os.sep+f, "."+os.sep+f)
     start_time = time.time()
+    # opencontact has hard coded input filenames
     shutil.copyfile(args.protA, "."+os.sep+"prota.pdb")
     shutil.copyfile(args.protB, "."+os.sep+"protb.pdb")
 
